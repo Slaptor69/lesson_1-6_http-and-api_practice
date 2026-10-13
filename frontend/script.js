@@ -4,10 +4,93 @@ const applicationList = document.querySelector("#application-list")
 const emptyState = document.querySelector("#empty-state")
 const requestStatus = document.querySelector("#request-status")
 const reloadButton = document.querySelector("#reload-button")
+const topicFilter = document.querySelector("#topic-filter")
+const actionStatus = document.querySelector("#action-status")
 
 const applicationForm = document.querySelector("#application-form")
 const submitButton = document.querySelector("#submit-button")
 const submitStatus = document.querySelector("#submit-status")
+const formTitle = document.querySelector("#form-title")
+const formMethod = document.querySelector("#form-method")
+const cancelEditButton = document.querySelector("#cancel-edit-button")
+
+let editingId = null
+let isMutating = false
+let loadController = null
+
+function updateControls() {
+  applicationForm.querySelectorAll("input, select, button").forEach((control) => {
+    control.disabled = isMutating
+  })
+  applicationList.querySelectorAll("button").forEach((button) => {
+    button.disabled = isMutating
+  })
+  reloadButton.disabled = isMutating || loadController !== null
+  topicFilter.disabled = isMutating
+}
+
+function setSubmitStatus(state, message) {
+  submitStatus.dataset.state = state
+  submitStatus.textContent = message
+}
+
+function resetFormMode() {
+  editingId = null
+  applicationForm.reset()
+  formTitle.textContent = "Создать заявку"
+  formMethod.textContent = "POST"
+  submitButton.textContent = "Отправить в API"
+  cancelEditButton.hidden = true
+}
+
+function editApplication(application) {
+  if (isMutating) return
+
+  editingId = application.id
+  applicationForm.elements.namedItem("name").value = application.name
+  applicationForm.elements.namedItem("email").value = application.email
+  applicationForm.elements.namedItem("topic").value = application.topic
+  formTitle.textContent = `Редактировать заявку #${editingId}`
+  formMethod.textContent = "PATCH"
+  submitButton.textContent = "Сохранить изменения"
+  cancelEditButton.hidden = false
+  setSubmitStatus("idle", "Измените данные и сохраните или отмените редактирование.")
+  applicationForm.elements.namedItem("name").focus()
+}
+
+async function deleteApplication(application) {
+  if (isMutating) return
+
+  isMutating = true
+  updateControls()
+  actionStatus.hidden = false
+  actionStatus.dataset.state = "loading"
+  actionStatus.textContent = `Удаляем заявку #${application.id}…`
+
+  try {
+    const response = await fetch(`${API_URL}/${encodeURIComponent(application.id)}`, {
+      method: "DELETE",
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
+
+    if (editingId === application.id) {
+      resetFormMode()
+      setSubmitStatus("idle", "Удалённая заявка больше не редактируется. Можно создать новую.")
+    }
+    actionStatus.dataset.state = "success"
+    actionStatus.textContent = `Заявка #${application.id} удалена.`
+    await loadApplications()
+  } catch (error) {
+    console.error("Не удалось удалить заявку", error)
+    actionStatus.dataset.state = "error"
+    actionStatus.textContent = "Не удалось удалить заявку. Проверьте API и повторите попытку."
+  } finally {
+    isMutating = false
+    updateControls()
+  }
+}
 
 // Готовая вспомогательная функция переключает состояния списка.
 // Во время практики вызывайте ее с одним из значений:
@@ -28,6 +111,7 @@ function setListState(state, message) {
 function createApplicationCard(application) {
   const card = document.createElement("article")
   card.className = "application-card"
+  card.dataset.id = application.id
 
   const heading = document.createElement("div")
   heading.className = "application-card__heading"
@@ -51,6 +135,24 @@ function createApplicationCard(application) {
   heading.append(name, id)
   card.append(heading, topic, email)
 
+  const actions = document.createElement("div")
+  actions.className = "application-card__actions"
+
+  const editButton = document.createElement("button")
+  editButton.type = "button"
+  editButton.className = "button button--secondary"
+  editButton.textContent = "Редактировать"
+  editButton.addEventListener("click", () => editApplication(application))
+
+  const deleteButton = document.createElement("button")
+  deleteButton.type = "button"
+  deleteButton.className = "button button--danger"
+  deleteButton.textContent = "Удалить"
+  deleteButton.addEventListener("click", () => deleteApplication(application))
+
+  actions.append(editButton, deleteButton)
+  card.append(actions)
+
   return card
 }
 
@@ -67,14 +169,23 @@ function renderApplications(applications) {
   })
 
   setListState("success", `Получено заявок: ${applications.length}`)
+  updateControls()
 }
 
 async function loadApplications() {
+  // При быстрой смене фильтра отменяем запрос, ответ которого уже устарел.
+  loadController?.abort()
+  const controller = new AbortController()
+  loadController = controller
   setListState("loading", "Загружаем заявки…")
-  reloadButton.disabled = true
+  updateControls()
 
   try {
-    const response = await fetch(API_URL)
+    const url = new URL(API_URL)
+    if (topicFilter.value) {
+      url.searchParams.set("topic", topicFilter.value)
+    }
+    const response = await fetch(url, { signal: controller.signal })
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }
@@ -82,34 +193,45 @@ async function loadApplications() {
     const applications = await response.json()
     console.log("Response:", response)
     console.log("Applications:", applications)
+    if (controller.signal.aborted) return
     renderApplications(applications)
   } catch (error) {
+    if (controller.signal.aborted) return
     console.error("Не удалось загрузить заявки", error)
 
     setListState("error", "Не удалось загрузить заявки. Проверьте API и повторите запрос.")
   } finally {
-    reloadButton.disabled = false
+    if (loadController === controller) {
+      loadController = null
+      updateControls()
+    }
   }
 }
 
 applicationForm.addEventListener("submit", async (event) => {
   event.preventDefault()
-  if (submitButton.disabled) return
+  if (isMutating) return
 
+  // Считываем значения до блокировки полей: disabled-поля не входят в FormData.
   const formData = new FormData(applicationForm)
   const application = {
     name: formData.get("name"),
     email: formData.get("email"),
     topic: formData.get("topic"),
-    createdAt: new Date().toISOString(),
+  }
+  const isEditing = editingId !== null
+  const url = isEditing ? `${API_URL}/${encodeURIComponent(editingId)}` : API_URL
+  if (!isEditing) {
+    application.createdAt = new Date().toISOString()
   }
 
-  submitButton.disabled = true
-  submitStatus.textContent = "Отправляем заявку…"
+  isMutating = true
+  updateControls()
+  setSubmitStatus("loading", isEditing ? "Сохраняем изменения…" : "Отправляем заявку…")
 
   try {
-    const response = await fetch(API_URL, {
-      method: "POST",
+    const response = await fetch(url, {
+      method: isEditing ? "PATCH" : "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(application),
     })
@@ -117,20 +239,27 @@ applicationForm.addEventListener("submit", async (event) => {
       throw new Error(`HTTP ${response.status}`)
     }
 
-    const createdApplication = await response.json()
-    console.log("Создана заявка:", createdApplication)
-    applicationForm.reset()
-    submitStatus.textContent = `Заявка #${createdApplication.id} сохранена.`
+    const savedApplication = await response.json()
+    console.log(isEditing ? "Обновлена заявка:" : "Создана заявка:", savedApplication)
+    resetFormMode()
+    setSubmitStatus("success", `Заявка #${savedApplication.id} ${isEditing ? "обновлена" : "сохранена"}.`)
     await loadApplications()
   } catch (error) {
-    console.error("Не удалось отправить заявку", error)
-    submitStatus.textContent = "Не удалось отправить заявку. Проверьте API и Network."
+    console.error(isEditing ? "Не удалось изменить заявку" : "Не удалось отправить заявку", error)
+    setSubmitStatus("error", "Не удалось сохранить заявку. Проверьте API и Network, затем повторите попытку.")
   } finally {
-    submitButton.disabled = false
+    isMutating = false
+    updateControls()
   }
 })
 
 reloadButton.addEventListener("click", loadApplications)
+topicFilter.addEventListener("change", loadApplications)
+cancelEditButton.addEventListener("click", () => {
+  if (isMutating) return
+  resetFormMode()
+  setSubmitStatus("idle", "Редактирование отменено. Можно создать новую заявку.")
+})
 
 // Первый запрос выполняется сразу после загрузки страницы.
 loadApplications()
