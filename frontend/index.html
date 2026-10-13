@@ -51,6 +51,16 @@
             </button>
           </div>
 
+          <label class="field">
+            <span>Фильтр по теме</span>
+            <select id="topic-filter">
+              <option value="">Все темы</option>
+              <option value="Городская мастерская">Городская мастерская</option>
+              <option value="Доступные интерфейсы">Доступные интерфейсы</option>
+              <option value="Личный сайт-портфолио">Личный сайт-портфолио</option>
+            </select>
+          </label>
+
           <div
             class="request-status"
             id="request-status"
@@ -62,6 +72,8 @@
           </div>
 
           <div class="application-list" id="application-list" hidden></div>
+
+          <p class="action-status" id="action-status" role="status" aria-live="polite" hidden></p>
 
           <div class="empty-state" id="empty-state" hidden>
             <span class="empty-state__number">0</span>
@@ -79,9 +91,9 @@
           <div class="panel-heading">
             <div>
               <p class="panel-kicker">Новый запрос</p>
-              <h2>Создать заявку</h2>
+              <h2 id="form-title">Создать заявку</h2>
             </div>
-            <span class="method-badge">POST</span>
+            <span class="method-badge" id="form-method">POST</span>
           </div>
 
           <label class="field">
@@ -121,6 +133,10 @@
             Отправить в API
           </button>
 
+          <button class="button button--secondary cancel-button" id="cancel-edit-button" type="button" hidden>
+            Отменить редактирование
+          </button>
+
           <p class="submit-status" id="submit-status" aria-live="polite">
             Заполните форму, чтобы создать заявку.
           </p>
@@ -144,7 +160,7 @@
 
     <footer class="page-footer">
       <span>НИУ ВШЭ · ДРИП</span>
-      <span>Один API · два HTTP-метода · четыре состояния</span>
+      <span>Один API · четыре HTTP-метода · четыре состояния</span>
     </footer>
 
     <script src="script.js"></script>
