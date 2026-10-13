@@ -55,13 +55,18 @@ function createApplicationCard(application) {
 }
 
 function renderApplications(applications) {
-  // TODO 3.1: очистите предыдущие карточки через replaceChildren().
+  applicationList.replaceChildren()
 
-  // TODO 3.2: если массив пуст, включите состояние empty и завершите функцию.
+  if (applications.length === 0) {
+    setListState("empty", "API вернул пустой массив")
+    return
+  }
 
-  // TODO 3.3: для каждой заявки создайте карточку и добавьте ее в список.
+  applications.forEach((application) => {
+    applicationList.append(createApplicationCard(application))
+  })
 
-  // TODO 3.4: включите состояние success и покажите количество заявок.
+  setListState("success", `Получено заявок: ${applications.length}`)
 }
 
 async function loadApplications() {
@@ -69,19 +74,19 @@ async function loadApplications() {
   reloadButton.disabled = true
 
   try {
-    // TODO 2.1: выполните GET-запрос к API_URL и сохраните Response.
+    const response = await fetch(API_URL)
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
 
-    // TODO 4.1: если response.ok равен false, выбросьте Error со статусом.
-
-    // TODO 2.2: получите массив через await response.json().
-
-    // TODO 2.3: выведите Response и полученные данные в Console.
-
-    // TODO 3.5: передайте массив в renderApplications().
+    const applications = await response.json()
+    console.log("Response:", response)
+    console.log("Applications:", applications)
+    renderApplications(applications)
   } catch (error) {
     console.error("Не удалось загрузить заявки", error)
 
-    // TODO 4.2: включите состояние error и покажите понятное сообщение.
+    setListState("error", "Не удалось загрузить заявки. Проверьте API и повторите запрос.")
   } finally {
     reloadButton.disabled = false
   }
@@ -89,23 +94,34 @@ async function loadApplications() {
 
 applicationForm.addEventListener("submit", async (event) => {
   event.preventDefault()
+  if (submitButton.disabled) return
+
+  const formData = new FormData(applicationForm)
+  const application = {
+    name: formData.get("name"),
+    email: formData.get("email"),
+    topic: formData.get("topic"),
+    createdAt: new Date().toISOString(),
+  }
 
   submitButton.disabled = true
   submitStatus.textContent = "Отправляем заявку…"
 
-  // TODO 5.1: создайте FormData и объект application с name, email,
-  // topic и createdAt. Значения получите методом formData.get().
-
   try {
-    // TODO 5.2: выполните POST-запрос к API_URL.
-    // Передайте method, заголовок Content-Type и JSON-строку в body.
+    const response = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(application),
+    })
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`)
+    }
 
-    // TODO 5.3: проверьте response.ok. При ошибке выбросьте Error.
-
-    // TODO 5.4: получите созданный объект через response.json()
-    // и выведите его в Console.
-
-    // TODO 5.5: очистите форму, покажите успех и снова загрузите список.
+    const createdApplication = await response.json()
+    console.log("Создана заявка:", createdApplication)
+    applicationForm.reset()
+    submitStatus.textContent = `Заявка #${createdApplication.id} сохранена.`
+    await loadApplications()
   } catch (error) {
     console.error("Не удалось отправить заявку", error)
     submitStatus.textContent = "Не удалось отправить заявку. Проверьте API и Network."
